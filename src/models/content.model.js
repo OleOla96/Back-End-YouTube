@@ -1,6 +1,5 @@
 module.exports = (sequelize, Sequelize) => {
-  const contents = sequelize.define('contents',
-  {
+  const contents = sequelize.define('contents', {
     id: {
       type: Sequelize.BIGINT.UNSIGNED,
       primaryKey: true,
@@ -15,6 +14,11 @@ module.exports = (sequelize, Sequelize) => {
       allowNull: true,
     },
     linkVideo: {
+      type: Sequelize.STRING,
+      allowNull: false,
+      unique: true,
+    },
+    videoName: {
       type: Sequelize.STRING,
       allowNull: false,
       unique: true,
@@ -34,12 +38,12 @@ module.exports = (sequelize, Sequelize) => {
     disLike: {
       type: Sequelize.MEDIUMINT.UNSIGNED,
       defaultValue: 0,
-    }
+    },
   });
   return contents;
-}
+};
 
-  // {
-  //   charset: 'utf8',
-  //   collate: 'utf8_unicode_ci',
-  // }
+// {
+//   charset: 'utf8',
+//   collate: 'utf8_unicode_ci',
+// }

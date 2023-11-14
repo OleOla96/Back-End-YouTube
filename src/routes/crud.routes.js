@@ -5,10 +5,10 @@ const verifyVideo = require('../middleware/verifyVideo');
 const crudController = require('../controllers/crud.controller');
 
 route.put('/upload', authJwt.verifyTokenRequired, verifyVideo, crudController.upload);
-route.get('/mycontents', authJwt.verifyTokenRequired, verifyVideo, crudController.mycontents);
+route.get('/mycontents', authJwt.verifyTokenRequired, verifyVideo, crudController.myContents);
 route.patch('/update', authJwt.verifyTokenRequired, verifyVideo, crudController.update);
-route.delete('/delete/:id', authJwt.verifyTokenRequired, verifyVideo, crudController.delete);
-route.delete('/delete', authJwt.verifyTokenRequired, verifyVideo, crudController.delete);
+route.delete('/delete/:id', authJwt.verifyTokenRequired, crudController.delete);
+route.delete('/delete', authJwt.verifyTokenRequired, crudController.multipleDelete);
 
 //old
 // route.put('/create', authJwt.verifyTokenRequired, crudController.create);

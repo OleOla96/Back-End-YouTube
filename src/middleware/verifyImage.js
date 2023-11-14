@@ -33,7 +33,9 @@ const verifyImage = multer({
 verifyImage.errorHandler = function (err, req, res, next) {
   if (err) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      res.status(400).send(`Upload failed. This file exceeds the file size limit of ${MB}MB.`);
+      res.status(400).send({ message: `Upload failed. This file exceeds the file size limit of ${MB}MB.` });
+    } else if (err.code !== 'LIMIT_FILE_SIZE') {
+      res.status(500).send({ message: 'Upload failed. Only "jpeg, jpg, png" files allowed.' });
     } else {
       res.status(500).send(err);
     }

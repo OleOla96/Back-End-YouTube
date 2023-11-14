@@ -29,7 +29,7 @@ const profileController = {
         limit: 20,
         order: [['createdAt', 'DESC']],
         where: { userId: req.userId },
-        attributes: ['id', 'title', 'description', 'linkVideo', 'view', 'createdAt', 'like', 'disLike'],
+        attributes: ['id', 'title', 'description', 'linkVideo', 'videoName', 'view', 'createdAt', 'like', 'disLike'],
       });
       const user = await Users.findByPk(req.userId);
       const { channelName, subscriber, avatar, username, email } = user;

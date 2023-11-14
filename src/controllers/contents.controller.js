@@ -1,4 +1,4 @@
-const sequelize = require('sequelize');
+const { Op } = require('sequelize');
 const db = require('../models');
 const Contents = db.contents;
 const Users = db.users;
@@ -12,7 +12,7 @@ const contentsController = {
         limit: 30,
         order: [['createdAt', 'DESC']],
         where: { published: true },
-        attributes: ['id', 'title', 'description', 'linkVideo', 'view', 'createdAt'],
+        attributes: ['id', 'title', 'description', 'linkVideo', 'videoName', 'view', 'createdAt'],
         include: [
           {
             model: Users,
@@ -28,14 +28,20 @@ const contentsController = {
 
   watch: async (req, res) => {
     try {
-      console.log('===========>', req.params.linkVideo);
-      const video = await Contents.findOne({ where: { linkVideo: req.params.linkVideo } });
-      await video.increment('view');
-      const contents = await Contents.findAll({
-        limit: 20,
-        order: [['createdAt', 'DESC']],
-        where: { published: true },
-        attributes: ['id', 'title', 'description', 'linkVideo', 'view', 'createdAt', 'userId', 'like', 'disLike'],
+      const video = await Contents.findOne({
+        where: { linkVideo: req.params.linkVideo, published: true },
+        attributes: [
+          'id',
+          'title',
+          'description',
+          'linkVideo',
+          'videoName',
+          'view',
+          'createdAt',
+          'userId',
+          'like',
+          'disLike',
+        ],
         include: [
           {
             model: Users,
@@ -43,54 +49,102 @@ const contentsController = {
           },
         ],
       });
-      let data = [];
-      let followers;
-      let likers;
+      await video.increment('view');
+      const contents = await Contents.findAll({
+        where: {
+          published: true,
+          linkVideo: {
+            [Op.ne]: req.params.linkVideo,
+          },
+        },
+        limit: 20,
+        order: [['createdAt', 'DESC']],
+        attributes: ['id', 'title', 'linkVideo', 'videoName', 'view', 'createdAt'],
+        include: [
+          {
+            model: Users,
+            attributes: ['channelName', 'avatar'],
+          },
+        ],
+      });
+      let watch = { ...video.get() };
       if (req.userId) {
-        followers = await Followers.findAll();
-        likers = await Likers.findAll();
-      }
-      for (const i of contents) {
-        let follow = false;
-        let statusLike = null;
-        if (req.userId && Object.keys(followers).length > 0) {
-          for (const j of followers) {
-            if (j.userId === i.userId && j.followerId === req.userId && j.status) {
-              follow = true;
-              break;
-            }
-          }
-        }
-        if (req.userId && Object.keys(likers).length > 0) {
-          for (const m of likers) {
-            if (m.contentId === i.id && m.likerId === req.userId && m.status === true) {
-              statusLike = true;
-              break;
-            }
-            if (m.contentId === i.id && m.likerId === req.userId && m.status === false) {
-              statusLike = false;
-              break;
-            }
-          }
-        }
-        data.push({
-          title: i.title,
-          id: i.id,
-          userId: i.userId,
-          username: i.user.username,
-          channelName: i.user.channelName,
-          avatar: i.user.avatar,
-          description: i.description,
-          linkVideo: i.linkVideo,
-          view: i.view,
-          like: i.like,
-          disLike: i.disLike,
-          statusLike,
-          createdAt: i.createdAt,
-          subscriber: i.user.subscriber,
-          follow,
+        let statusLike;
+        let statusFollow;
+        const _statusLike = await Likers.findOne({
+          where: { likerId: req.userId, contentId: video.id },
+          attributes: ['status'],
         });
+        // console.log('==============>', video.id);
+        const _statusFollow = await Followers.findOne({
+          where: { followerId: req.userId, userId: video.userId },
+          attributes: ['status'],
+        });
+        if (_statusLike) {
+          // console.log('==============>', video.userId);
+          // console.log('==============>', _statusLike.status);
+          statusLike = _statusLike.status;
+        }
+        if (_statusFollow) {
+          // console.log('==============>', _statusFollow.status);
+          statusFollow = _statusFollow.status;
+        }
+        watch = {
+          ...video.get(),
+          statusLike,
+          statusFollow,
+        };
       }
+      const data = { watch, list: [...contents] };
+      return res.status(200).send(data);
+    } catch (error) {
+      return res.status(500).send(error);
+    }
+  },
+
+  watchPrivate: async (req, res) => {
+    try {
+      const video = await Contents.findOne({
+        where: { linkVideo: req.params.linkVideo },
+        attributes: [
+          'id',
+          'title',
+          'description',
+          'linkVideo',
+          'videoName',
+          'view',
+          'createdAt',
+          'userId',
+          'like',
+          'disLike',
+        ],
+        include: [
+          {
+            model: Users,
+            attributes: ['channelName', 'subscriber', 'username', 'avatar'],
+          },
+        ],
+      });
+      await video.increment('view');
+      const contents = await Contents.findAll({
+        limit: 20,
+        order: [['createdAt', 'DESC']],
+        where: {
+          userId: req.userId,
+          linkVideo: {
+            [Op.ne]: req.params.linkVideo,
+          },
+        },
+        attributes: ['id', 'title', 'description', 'linkVideo', 'videoName', 'view', 'createdAt', 'like', 'disLike'],
+        include: [
+          {
+            model: Users,
+            attributes: ['channelName', 'subscriber', 'avatar'],
+          },
+        ],
+      });
+      const watch = { ...video.get() };
+      const data = { watch, list: [...contents] };
       return res.status(200).send(data);
     } catch (error) {
       return res.status(500).send(error);
@@ -100,25 +154,31 @@ const contentsController = {
   subcribe: async (req, res) => {
     try {
       if (req.userId === req.query.channelId) return res.status(403).send({ message: 'Unauthorized' });
-      const find = await Followers.findOne({
+      const findFollower = await Followers.findOne({
         where: {
           userId: req.query.channelId,
           followerId: req.userId,
         },
       });
-      const value = req.query.v === 'true';
-      if (find) {
-        if (value) {
-          await Followers.update({ status: true }, { where: { followerId: req.userId } });
-          const findUser = await Users.findByPk(req.query.channelId);
+      const findUser = await Users.findByPk(req.query.channelId);
+      if (findFollower && findUser) {
+        if (req.query.v === 'true' && findFollower.status === false) {
+          await findFollower.update({ status: true });
           await findUser.increment('subscriber');
-          return res.status(200).send({ message: 'Subscribed' });
-        } else {
-          await Followers.update({ status: false }, { where: { followerId: req.userId } });
-          const findUser = await Users.findByPk(req.query.channelId);
+          const updateUser = await Users.findByPk(req.query.channelId);
+          return res
+            .status(200)
+            .send({ subscriber: updateUser.subscriber, statusFollow: findFollower.status, message: 'Subscribed' });
+        } else if (req.query.v === 'false' && findFollower.status === true) {
+          await findFollower.update({ status: false });
           if (findUser.subscriber === 0) return res.status(400).send({ message: 'Error' });
           await findUser.decrement('subscriber');
-          return res.status(200).send({ message: 'Unsubscribed' });
+          const updateUser = await Users.findByPk(req.query.channelId);
+          return res
+            .status(200)
+            .send({ subscriber: updateUser.subscriber, statusFollow: findFollower.status, message: 'Unsubscribed' });
+        } else {
+          return res.status(400).send({ message: 'Invalid value !' });
         }
       } else {
         await Followers.create({
@@ -126,9 +186,9 @@ const contentsController = {
           followerId: req.userId,
           status: true,
         });
-        const findUser = await Users.findByPk(req.query.channelId);
         await findUser.increment('subscriber');
-        return res.status(200).send({ message: 'Subscribed' });
+        const updateUser = await Users.findByPk(req.query.channelId);
+        return res.status(200).send({ subscriber: updateUser.subscriber, statusFollow: true, message: 'Subscribed' });
       }
     } catch (error) {
       return res.status(500).send(error);
@@ -138,60 +198,72 @@ const contentsController = {
   like: async (req, res) => {
     try {
       const findContent = await Contents.findByPk(req.query.id);
-      const findLike = await Likers.findOne({
+      const findLiker = await Likers.findOne({
         where: {
           likerId: req.userId,
           contentId: req.query.id,
         },
       });
-      if (findLike) {
+      if (findLiker && findContent) {
         if (req.query.v === 'true') {
-          await Likers.update(
-            { status: true },
-            {
-              where: {
-                likerId: req.userId,
-                contentId: req.query.id,
-              },
-            },
-          );
-          await findContent.increment('like');
-          if (findLike.status === false) await findContent.decrement('disLike');
-          return res.status(200).send({ message: 'Liked' });
-        } else if (req.query.v === 'false') {
-          await Likers.update(
-            { status: false },
-            {
-              where: {
-                likerId: req.userId,
-                contentId: req.query.id,
-              },
-            },
-          );
-          await findContent.increment('disLike');
-          if (findLike.status === true) await findContent.decrement('like');
-          return res.status(200).send({ message: 'Disliked' });
-        } else {
-          await Likers.update(
-            { status: null },
-            {
-              where: {
-                likerId: req.userId,
-                contentId: req.query.id,
-              },
-            },
-          );
-          if (req.query.t === 'unlike') {
-            if (findContent.like === 0) return res.status(400).send({ message: 'Error' });
-            await findContent.decrement('like');
-          }
-          if (req.query.t === 'undislike') {
-            if (findContent.dislike === 0) return res.status(400).send({ message: 'Error' });
+          if (findLiker.status === false) {
+            await findLiker.update({ status: true });
             await findContent.decrement('disLike');
+            await findContent.increment('like');
+          } else if (findLiker.status === null) {
+            await findLiker.update({ status: true });
+            await findContent.increment('like');
+          } else {
+            return res.status(400).send({ message: 'Invalid value 1 !' });
           }
-          return res.status(200).send({ message: '' });
+          const updateContent = await Contents.findByPk(req.query.id);
+          return res.status(200).send({
+            statusLike: true,
+            like: updateContent.like,
+            disLike: updateContent.disLike,
+            message: 'Liked',
+          });
+        } else if (req.query.v === 'false') {
+          if (findLiker.status === true) {
+            await findLiker.update({ status: false });
+            await findContent.decrement('like');
+            await findContent.increment('disLike');
+          } else if (findLiker.status === null) {
+            await findLiker.update({ status: false });
+            await findContent.increment('disLike');
+          } else {
+            return res.status(400).send({ message: 'Invalid value 2 !' });
+          }
+          const updateContent = await Contents.findByPk(req.query.id);
+          return res.status(200).send({
+            statusLike: false,
+            like: updateContent.like,
+            disLike: updateContent.disLike,
+            message: 'Disliked',
+          });
+        } else {
+          if (req.query.t === 'unlike' && findLiker.status === true) {
+            if (findContent.like === 0) return res.status(400).send({ message: 'Invalid value 3 !' });
+            await findContent.decrement('like');
+          } else if (req.query.t === 'undislike' && findLiker.status === false) {
+            if (findContent.dislike === 0) return res.status(400).send({ message: 'Invalid value 4 !' });
+            await findContent.decrement('disLike');
+          } else {
+            return res.status(400).send({ message: 'Invalid value 5 !' });
+          }
+          await findLiker.update({ status: null });
+          const updateContent = await Contents.findByPk(req.query.id);
+          const updateLiker = await Likers.findOne({
+            where: {
+              likerId: req.userId,
+              contentId: req.query.id,
+            },
+          });
+          return res
+            .status(200)
+            .send({ statusLike: updateLiker.status, like: updateContent.like, disLike: updateContent.disLike });
         }
-      } else {
+      } else if (findContent) {
         if (req.query.v === 'true') {
           await Likers.create({
             contentId: req.query.id,
@@ -199,56 +271,33 @@ const contentsController = {
             status: true,
           });
           await findContent.increment('like');
-          return res.status(200).send({ message: 'Liked' });
-        } else {
+          const updateContent = await Contents.findByPk(req.query.id);
+          return res.status(200).send({
+            statusLike: true,
+            like: updateContent.like,
+            disLike: updateContent.disLike,
+            message: 'Liked',
+          });
+        } else if (req.query.v === 'false') {
           await Likers.create({
             contentId: req.query.id,
             likerId: req.userId,
             status: false,
           });
           await findContent.increment('disLike');
-          return res.status(200).send({ message: 'Disliked' });
+          const updateContent = await Contents.findByPk(req.query.id);
+          return res.status(200).send({
+            statusLike: false,
+            like: updateContent.like,
+            disLike: updateContent.disLike,
+            message: 'Disliked',
+          });
+        } else {
+          return res.status(400).send({ message: 'Invalid value 6 !' });
         }
+      } else {
+        return res.status(400).send({ message: 'Content does not exist!' });
       }
-    } catch (error) {
-      return res.status(500).send(error);
-    }
-  },
-
-  watchPrivate: async (req, res) => {
-    try {
-      const video = await Contents.findOne({ where: { linkVideo: req.params.linkVideo } });
-      await video.increment('view');
-      const contents = await Contents.findAll({
-        limit: 20,
-        order: [['createdAt', 'DESC']],
-        where: { userId: req.userId },
-        attributes: ['id', 'title', 'description', 'linkVideo', 'view', 'createdAt', 'like', 'disLike'],
-        include: [
-          {
-            model: Users,
-            attributes: ['channelName', 'subscriber', 'avatar'],
-          },
-        ],
-      });
-      let data = [];
-      for (const i of contents) {
-        data.push({
-          title: i.title,
-          id: i.id,
-          userId: i.userId,
-          channelName: i.user.channelName,
-          avatar: i.user.avatar,
-          description: i.description,
-          linkVideo: i.linkVideo,
-          view: i.view,
-          like: i.like,
-          disLike: i.disLike,
-          createdAt: i.createdAt,
-          subscriber: i.user.subscriber,
-        });
-      }
-      return res.status(200).send(data);
     } catch (error) {
       return res.status(500).send(error);
     }
